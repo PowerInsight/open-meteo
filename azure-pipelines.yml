@@ -1,0 +1,41 @@
+parameters:
+  branch: $(Build.SourceBranchName)
+
+stages:
+  - stage: DeployOpenMeteoApi
+    displayName: Deploy Open-Meteo API
+    jobs:
+      - job: Build
+        displayName: Build and Deploy Open-Meteo API
+        pool:
+          name: Linux
+        steps:
+          - task: Bash@3
+            name: SetupEnv
+            inputs:
+              targetType: "inline"
+              script: |
+                cp ./docker-compose.yml ~/powerinsight/open-meteo/docker-compose.yml
+          - task: Bash@3
+            name: DockerComposeBuild
+            continueOnError: true
+            inputs:
+              targetType: "inline"
+              script: |
+                docker compose -f docker-compose.yml build
+          - task: Bash@3
+            name: DockerComposeUp
+            continueOnError: true
+            inputs:
+              targetType: "inline"
+              script: |
+                docker compose -p open-meteo down
+                docker volume rm open_meteo_database
+                docker compose -f ~/powerinsight/open-meteo/docker-compose.yml up --detach
+          - task: Bash@3
+            name: DockerPrune
+            inputs:
+              targetType: "inline"
+              script: |
+                # Write your commands here
+                docker image prune --force
