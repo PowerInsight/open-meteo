@@ -1,6 +1,3 @@
-parameters:
-  branch: $(Build.SourceBranchName)
-
 stages:
   - stage: DeployOpenMeteoApi
     displayName: Deploy Open-Meteo API
