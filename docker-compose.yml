@@ -6,6 +6,11 @@
 
 volumes:
   open_meteo_database:
+    driver: local
+    driver_opts:
+      type: none
+      device: /mnt/big_storage
+      o: bind
 
 x-shared_environment: &shared_environment
   LOG_LEVEL: info
