@@ -1,11 +1,11 @@
-import OmFileFormat
+@preconcurrency import OmFileFormat
 import SwiftNetCDF
 import Foundation
 import Logging
 
 /// Downloaders return FileHandles to keep files open while downloading
 /// If another download starts and would overlap, this still keeps the old file open
-struct GenericVariableHandle {
+struct GenericVariableHandle: Sendable {
     let variable: GenericVariable
     let time: Timestamp
     let member: Int
@@ -276,8 +276,8 @@ actor GenericVariableHandleStorage {
 }
 
 /// Thread safe storage for downloading grib messages. Can be used to post process data.
-actor VariablePerMemberStorage<V: Hashable> {
-    struct VariableAndMember: Hashable {
+actor VariablePerMemberStorage<V: Hashable & Sendable> {
+    struct VariableAndMember: Hashable, Sendable {
         let variable: V
         let timestamp: Timestamp
         let member: Int
@@ -401,20 +401,20 @@ actor GribDeaverager {
     public init(data: [Int: (step: Int, data: [Float])] = .init()) {
         self.data = data
     }
-
+    
     /// Returns false if step should be skipped
-    func deaccumulateIfRequired<V: Hashable>(variable: V, member: Int, stepType: String, stepRange: String, grib2d: inout GribArray2D) async -> Bool {
+    func deaccumulateIfRequired<V: Hashable>(variable: V, member: Int, stepType: String, stepRange: String, array2d: inout Array2D) async -> Bool {
         // Deaccumulate precipitation
         if stepType == "accum" {
             guard let (startStep, currentStep) = stepRange.splitTo2Integer(), startStep != currentStep else {
                 return false
             }
             // Store data for next timestep
-            let previous = set(variable: variable, member: member, step: currentStep, data: grib2d.array.data)
+            let previous = set(variable: variable, member: member, step: currentStep, data: array2d.data)
             // For the overall first timestep or the first step of each repeating section, deaveraging is not required
             if let previous, previous.step != startStep, currentStep > previous.step {
                 for l in previous.data.indices {
-                    grib2d.array.data[l] -= previous.data[l]
+                    array2d.data[l] -= previous.data[l]
                 }
             }
         }
@@ -425,17 +425,22 @@ actor GribDeaverager {
                 return false
             }
             // Store data for next timestep
-            let previous = set(variable: variable, member: member, step: currentStep, data: grib2d.array.data)
+            let previous = set(variable: variable, member: member, step: currentStep, data: array2d.data)
             // For the overall first timestep or the first step of each repeating section, deaveraging is not required
             if let previous, previous.step != startStep, currentStep > previous.step {
                 let deltaHours = Float(currentStep - startStep)
                 let deltaHoursPrevious = Float(previous.step - startStep)
                 for l in previous.data.indices {
-                    grib2d.array.data[l] = (grib2d.array.data[l] * deltaHours - previous.data[l] * deltaHoursPrevious) / (deltaHours - deltaHoursPrevious)
+                    array2d.data[l] = (array2d.data[l] * deltaHours - previous.data[l] * deltaHoursPrevious) / (deltaHours - deltaHoursPrevious)
                 }
             }
         }
 
         return true
+    }
+
+    /// Returns false if step should be skipped
+    func deaccumulateIfRequired<V: Hashable>(variable: V, member: Int, stepType: String, stepRange: String, grib2d: inout GribArray2D) async -> Bool {
+        return await deaccumulateIfRequired(variable: variable, member: member, stepType: stepType, stepRange: stepRange, array2d: &grib2d.array)
     }
 }
